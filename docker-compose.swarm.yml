@@ -1,0 +1,151 @@
+version: '3.8'
+
+services:
+  llama-server:
+    image: llama-server:latest
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == worker
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+    ports:
+      - target: 8080
+        published: 8080
+        mode: ingress
+    volumes:
+      - type: bind
+        source: ./models
+        target: /app/models
+        read_only: true
+      - type: bind
+        source: ./logs
+        target: /app/logs
+    environment:
+      - MODEL_PATH=/app/models/${MODEL_FILENAME}
+      - THREADS=${CPU_THREADS:-8}
+      - CONTEXT_SIZE=${CONTEXT_SIZE:-4096}
+    command: >
+      llama-server
+      --host 0.0.0.0
+      --port 8080
+      --model /app/models/${MODEL_FILENAME}
+      --threads ${CPU_THREADS:-8}
+      --ctx-size ${CONTEXT_SIZE:-4096}
+      --n-predict ${MAX_TOKENS:-512}
+      --temp ${TEMPERATURE:-0.7}
+      --top-p ${TOP_P:-0.9}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - llama-network
+
+  api-server:
+    image: llama-api:latest
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == worker
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    ports:
+      - target: 8000
+        published: 8000
+        mode: ingress
+    environment:
+      - LLAMA_ENDPOINT=http://llama-server:8080
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - API_KEY=${API_KEY:-}
+    volumes:
+      - type: bind
+        source: ./logs
+        target: /app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - llama-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+    ports:
+      - target: 9090
+        published: 9090
+        mode: ingress
+    volumes:
+      - type: bind
+        source: ./monitoring/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
+      - type: volume
+        source: prometheus_data
+        target: /prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - llama-network
+
+  grafana:
+    image: grafana/grafana:latest
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+    ports:
+      - target: 3000
+        published: 3000
+        mode: ingress
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - type: volume
+        source: grafana_data
+        target: /var/lib/grafana
+      - type: bind
+        source: ./monitoring/grafana/dashboards
+        target: /etc/grafana/provisioning/dashboards
+        read_only: true
+      - type: bind
+        source: ./monitoring/grafana/datasources
+        target: /etc/grafana/provisioning/datasources
+        read_only: true
+    networks:
+      - llama-network
+
+volumes:
+  prometheus_data:
+    external: true
+  grafana_data:
+    external: true
+
+networks:
+  llama-network:
+    driver: overlay
+    attachable: true

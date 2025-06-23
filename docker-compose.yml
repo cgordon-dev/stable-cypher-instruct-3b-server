@@ -1,0 +1,137 @@
+version: '3.8'
+
+services:
+  llama-server-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: cpu-runtime
+    container_name: llama-server-cpu
+    ports:
+      - "${LLAMA_PORT_CPU:-8080}:8080"
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    environment:
+      - MODEL_PATH=/app/models/${MODEL_FILENAME}
+      - THREADS=${CPU_THREADS:-8}
+      - CONTEXT_SIZE=${CONTEXT_SIZE:-4096}
+    command: >
+      llama-server
+      --host 0.0.0.0
+      --port 8080
+      --model /app/models/${MODEL_FILENAME}
+      --threads ${CPU_THREADS:-8}
+      --ctx-size ${CONTEXT_SIZE:-4096}
+      --n-predict ${MAX_TOKENS:-512}
+      --temp ${TEMPERATURE:-0.7}
+      --top-p ${TOP_P:-0.9}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    profiles:
+      - cpu
+
+  llama-server-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: gpu-runtime
+    container_name: llama-server-gpu
+    ports:
+      - "${LLAMA_PORT_GPU:-8081}:8080"
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    environment:
+      - MODEL_PATH=/app/models/${MODEL_FILENAME}
+      - GPU_LAYERS=${GPU_LAYERS:-32}
+      - CONTEXT_SIZE=${CONTEXT_SIZE:-4096}
+    command: >
+      llama-server
+      --host 0.0.0.0
+      --port 8080
+      --model /app/models/${MODEL_FILENAME}
+      --n-gpu-layers ${GPU_LAYERS:-32}
+      --ctx-size ${CONTEXT_SIZE:-4096}
+      --n-predict ${MAX_TOKENS:-512}
+      --temp ${TEMPERATURE:-0.7}
+      --top-p ${TOP_P:-0.9}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    profiles:
+      - gpu
+
+  api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: llama-api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      - LLAMA_ENDPOINT=http://llama-server-${DEPLOYMENT_MODE:-cpu}:8080
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - API_KEY=${API_KEY:-}
+    depends_on:
+      - llama-server-cpu
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    name: llama-network
