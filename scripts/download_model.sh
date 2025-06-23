@@ -3,7 +3,7 @@
 set -euo pipefail
 
 MODEL_NAME="stable-cypher-instruct-3b.Q4_K_M.gguf"
-MODEL_URL="https://huggingface.co/bartowski/stable-cypher-instruct-3b-GGUF/resolve/main/stable-cypher-instruct-3b.Q4_K_M.gguf"
+MODEL_URL="https://huggingface.co/lakkeo/stable-cypher-instruct-3b/resolve/main/stable-cypher-instruct-3b.Q4_K_M.gguf"
 MODEL_DIR="./models"
 MODEL_PATH="${MODEL_DIR}/${MODEL_NAME}"
 

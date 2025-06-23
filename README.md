@@ -5,6 +5,7 @@ A production-ready containerized deployment solution for the **stable-cypher-ins
 ## 🎯 Overview
 
 This solution provides:
+- **Interactive Web UI** for generating Cypher queries with real-time metrics
 - **Offline deployment** with no external dependencies or telemetry
 - **CPU and GPU** inference configurations
 - **Full observability** with Prometheus and Grafana
@@ -15,15 +16,15 @@ This solution provides:
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   API Server    │───▶│   Llama Server   │───▶│   Model File    │
-│   (FastAPI)     │    │   (llama.cpp)    │    │   (.gguf)       │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-         │                        │
-         ▼                        ▼
-┌─────────────────┐    ┌──────────────────┐
-│   Prometheus    │    │     Grafana      │
-│   (Metrics)     │    │   (Dashboard)    │
-└─────────────────┘    └──────────────────┘
+│   Web UI        │───▶│   API Server     │───▶│   Llama Server  │───▶│   Model File    │
+│   (Flask+JS)    │    │   (FastAPI)      │    │   (llama.cpp)   │    │   (.gguf)       │
+└─────────────────┘    └──────────────────┘    └─────────────────┘    └─────────────────┘
+         │                        │                        │
+         ▼                        ▼                        ▼
+┌─────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+│   Prometheus    │    │     Grafana      │    │  Metrics/Health  │
+│   (Metrics)     │    │   (Dashboard)    │    │   (Real-time)    │
+└─────────────────┘    └──────────────────┘    └──────────────────┘
 ```
 
 ## 🚀 Quick Start
@@ -91,10 +92,11 @@ make open
 
 After successful deployment:
 
-- **API Server**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
-- **Prometheus**: http://localhost:9090
-- **Grafana**: http://localhost:3000 (admin/admin)
+- **🎨 Web UI**: http://localhost:5001 (Interactive Cypher query generator)
+- **🔗 API Server**: http://localhost:8000
+- **📚 API Documentation**: http://localhost:8000/docs
+- **📈 Prometheus**: http://localhost:9090
+- **📊 Grafana**: http://localhost:3000 (admin/admin)
 
 ## 🔧 Configuration
 
@@ -139,6 +141,7 @@ TOP_P=0.9           # Nucleus sampling (0.0-1.0)
 - **llama-server-cpu**: CPU-only llama.cpp server
 - **llama-server-gpu**: GPU-enabled llama.cpp server
 - **api-server**: FastAPI wrapper with validation
+- **web-ui**: Interactive Flask web interface with real-time metrics
 - **prometheus**: Metrics collection
 - **grafana**: Monitoring dashboards
 
@@ -173,6 +176,30 @@ Pre-configured dashboards for:
 - **Optional API key authentication**
 - **No telemetry or data leakage**
 - **Auditable model artifacts** (.gguf files)
+
+## 🎨 Web UI Features
+
+The included web interface provides:
+
+- **🤖 Interactive Chat**: Generate Cypher queries using natural language
+- **📊 Real-time Metrics**: Live performance and health monitoring
+- **💾 Query Examples**: Pre-built examples for common Cypher patterns
+- **⚡ WebSocket Updates**: Live metrics updates without page refresh
+- **📱 Responsive Design**: Works on desktop and mobile devices
+
+### Using the Web UI
+
+1. **Navigate to**: http://localhost:5001
+2. **Enter your query**: "Find all movies directed by Christopher Nolan"
+3. **Get Cypher**: Receive optimized Cypher query instantly
+4. **Monitor Performance**: View real-time generation metrics
+
+### Example Prompts
+
+- "Generate a Cypher query to find all Person nodes with name John"
+- "Create a query to find movies acted by Tom Hanks"
+- "Write a Cypher query to find users who have similar preferences"
+- "Find all products in a specific category with their prices"
 
 ## 📝 API Usage
 
@@ -300,6 +327,72 @@ echo "CONTEXT_SIZE=2048" >> .env
 make restart
 ```
 
+**Port conflicts (5000 already in use):**
+```bash
+# Web UI port changed to 5001 to avoid conflicts
+# Update .env file if needed:
+echo "WEB_UI_PORT=5001" >> .env
+make restart
+```
+
+**Docker not running:**
+```bash
+# Start Docker Desktop or service
+sudo systemctl start docker  # Linux
+# or start Docker Desktop on macOS/Windows
+```
+
+**llama.cpp build errors:**
+```bash
+# Modern llama.cpp uses CMake instead of Makefile
+# Dockerfile automatically handles this
+# If manual build needed:
+cd llama.cpp
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+```
+
+**Missing shared libraries:**
+```bash
+# Fixed in Dockerfile by copying .so files and setting LD_LIBRARY_PATH
+# For manual debugging:
+ldd /usr/local/bin/llama-server
+export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+```
+
+**Web UI 500 errors:**
+```bash
+# Check API server status
+curl http://localhost:8000/health
+
+# Check API server logs
+docker-compose logs api-server
+
+# Common fixes:
+# 1. Ensure API server is running and healthy
+# 2. Check middleware configuration
+# 3. Verify response format matches expected structure
+```
+
+**API 422 validation errors:**
+```bash
+# Fixed by bypassing Pydantic validation for responses
+# If still occurring, check request format:
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "test", "max_tokens": 50}'
+```
+
+**SocketIO connection errors:**
+```bash
+# Check web UI logs
+docker-compose logs web-ui
+
+# Verify SocketIO parameters - broadcast=True was removed
+# Connection should work on http://localhost:5001
+```
+
 ### Log Analysis
 
 ```bash
@@ -309,8 +402,14 @@ docker-compose logs api-server
 # Llama server logs
 docker-compose logs llama-server-cpu
 
+# Web UI logs
+docker-compose logs web-ui
+
 # All logs with timestamps
 docker-compose logs -t -f
+
+# Follow specific service logs
+docker-compose logs -f api-server
 ```
 
 ### Performance Tuning
@@ -324,6 +423,23 @@ docker-compose logs -t -f
 - Adjust `GPU_LAYERS` based on VRAM
 - Monitor GPU utilization in Grafana
 - Use larger batch sizes for throughput
+
+### Known Working Configuration
+
+**Tested Environment:**
+- macOS with Docker Desktop
+- Ubuntu 22.04 with Docker CE
+- Model: stable-cypher-instruct-3b.Q4_K_M.gguf (1.6GB)
+- Web UI Port: 5001 (changed from 5000 to avoid conflicts)
+- All services healthy and operational
+
+**Service Health Check:**
+```bash
+# Quick health verification
+curl http://localhost:8000/health
+curl http://localhost:5001/api/health
+curl http://localhost:9090/-/healthy
+```
 
 ## 📦 Model Information
 

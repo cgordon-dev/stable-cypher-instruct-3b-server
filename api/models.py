@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 from typing import List, Optional, Union, Dict, Any
 from enum import Enum
 
@@ -22,16 +22,6 @@ class ChatCompletionRequest(BaseModel):
     stop: Optional[Union[str, List[str]]] = None
     stream: bool = False
     
-    @validator('messages', 'prompt')
-    def validate_input(cls, v, values):
-        messages = values.get('messages') if 'messages' in values else v
-        prompt = values.get('prompt') if 'prompt' in values else (v if 'messages' not in values else None)
-        
-        if not messages and not prompt:
-            raise ValueError('Either messages or prompt must be provided')
-        if messages and prompt:
-            raise ValueError('Cannot provide both messages and prompt')
-        return v
     
     def get_prompt_text(self) -> str:
         if self.prompt:

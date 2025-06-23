@@ -32,8 +32,6 @@ services:
       timeout: 10s
       retries: 3
     restart: unless-stopped
-    profiles:
-      - cpu
 
   llama-server-gpu:
     build:
@@ -93,6 +91,29 @@ services:
       - ./logs:/app/logs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  web-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: llama-web-ui
+    ports:
+      - "${WEB_PORT:-5001}:5000"
+    environment:
+      - API_BASE_URL=http://api-server:8000
+      - PROMETHEUS_URL=http://prometheus:9090
+      - METRICS_URL=http://api-server:8000/metrics
+      - UPDATE_INTERVAL=${METRICS_UPDATE_INTERVAL:-5}
+      - SECRET_KEY=${WEB_SECRET_KEY:-dev-secret-key-change-in-production}
+    depends_on:
+      - api-server
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

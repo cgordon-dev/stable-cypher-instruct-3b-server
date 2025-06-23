@@ -1,4 +1,4 @@
-.PHONY: help build-cpu build-gpu build-api download-model validate setup-cpu setup-gpu deploy-swarm clean logs test open stop restart health
+.PHONY: help build-cpu build-gpu build-api build-web download-model validate setup-cpu setup-gpu deploy-swarm clean logs test open stop restart health
 
 SHELL := /bin/bash
 DEPLOYMENT_MODE ?= cpu
@@ -41,12 +41,16 @@ build-api: ## Build API server image
 	@echo "🏗️  Building API server image..."
 	docker build -f Dockerfile.api -t llama-api:latest .
 
-build-all: build-cpu build-gpu build-api ## Build all Docker images
+build-web: ## Build web UI image
+	@echo "🏗️  Building web UI image..."
+	docker build -f Dockerfile.web -t llama-web-ui:latest .
 
-setup-cpu: download-model build-cpu build-api ## Complete CPU setup
+build-all: build-cpu build-gpu build-api build-web ## Build all Docker images
+
+setup-cpu: download-model build-cpu build-api build-web ## Complete CPU setup
 	@echo "✅ CPU setup complete"
 
-setup-gpu: download-model build-gpu build-api ## Complete GPU setup
+setup-gpu: download-model build-gpu build-api build-web ## Complete GPU setup
 	@echo "✅ GPU setup complete"
 
 start: validate ## Start services with docker-compose
@@ -70,6 +74,7 @@ logs-llama: ## View llama server logs only
 
 health: ## Check health of all services
 	@echo "🏥 Checking service health..."
+	@curl -f http://localhost:5000/api/health || echo "❌ Web UI unhealthy"
 	@curl -f http://localhost:8000/health || echo "❌ API server unhealthy"
 	@curl -f http://localhost:9090/api/v1/status || echo "❌ Prometheus unhealthy"
 	@curl -f http://localhost:3000/api/health || echo "❌ Grafana unhealthy"
@@ -80,6 +85,7 @@ test: ## Run memory replay tests
 
 open: ## Open service URLs in browser
 	@echo "🌐 Opening services..."
+	@command -v open >/dev/null 2>&1 && open http://localhost:5000 || echo "Web UI: http://localhost:5000"
 	@command -v open >/dev/null 2>&1 && open http://localhost:8000/docs || echo "API docs: http://localhost:8000/docs"
 	@command -v open >/dev/null 2>&1 && open http://localhost:9090 || echo "Prometheus: http://localhost:9090"
 	@command -v open >/dev/null 2>&1 && open http://localhost:3000 || echo "Grafana: http://localhost:3000"
@@ -113,13 +119,14 @@ clean: ## Clean up Docker resources
 	docker volume prune -f
 
 clean-all: clean ## Clean up everything including images
-	docker rmi -f $$(docker images -q llama-server:* llama-api:* 2>/dev/null) || true
+	docker rmi -f $$(docker images -q llama-server:* llama-api:* llama-web-ui:* 2>/dev/null) || true
 
 all: setup-$(DEPLOYMENT_MODE) start health ## Complete setup and deployment
 	@echo ""
 	@echo "🎉 Deployment complete!"
 	@echo ""
 	@echo "Services available at:"
+	@echo "  Web UI:       http://localhost:5000"
 	@echo "  API Server:   http://localhost:8000"
 	@echo "  API Docs:     http://localhost:8000/docs"
 	@echo "  Prometheus:   http://localhost:9090"

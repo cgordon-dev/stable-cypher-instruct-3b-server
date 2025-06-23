@@ -87,7 +87,7 @@ class LlamaClient:
                     "generation_time": generation_time,
                     "tokens_per_second": result.get("tokens_predicted", 0) / generation_time if generation_time > 0 else 0,
                     "truncated": result.get("truncated", False),
-                    "stop_reason": result.get("stop", "length")
+                    "stop_reason": "stop" if result.get("stop", False) else "length"
                 }
                 
             except httpx.RequestError as e:

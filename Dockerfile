@@ -17,7 +17,9 @@ WORKDIR /app
 FROM base as cpu-builder
 RUN git clone https://github.com/ggerganov/llama.cpp.git && \
     cd llama.cpp && \
-    make server LLAMA_CURL=1
+    mkdir build && cd build && \
+    cmake .. -DLLAMA_CURL=ON -DLLAMA_SERVER=ON && \
+    cmake --build . --config Release -j $(nproc)
 
 FROM base as gpu-builder
 RUN apt-get update && apt-get install -y \
@@ -26,11 +28,15 @@ RUN apt-get update && apt-get install -y \
 
 RUN git clone https://github.com/ggerganov/llama.cpp.git && \
     cd llama.cpp && \
-    make server LLAMA_CUDA=1 LLAMA_CURL=1
+    mkdir build && cd build && \
+    cmake .. -DLLAMA_CUDA=ON -DLLAMA_CURL=ON -DLLAMA_SERVER=ON && \
+    cmake --build . --config Release -j $(nproc)
 
 FROM base as cpu-runtime
-COPY --from=cpu-builder /app/llama.cpp/server /usr/local/bin/llama-server
-RUN mkdir -p /app/models /app/logs
+COPY --from=cpu-builder /app/llama.cpp/build/bin/llama-server /usr/local/bin/llama-server
+COPY --from=cpu-builder /app/llama.cpp/build/bin/lib*.so* /usr/local/lib/
+RUN mkdir -p /app/models /app/logs && ldconfig
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 EXPOSE 8080
 CMD ["llama-server", "--host", "0.0.0.0", "--port", "8080"]
 
@@ -39,7 +45,9 @@ RUN apt-get update && apt-get install -y \
     nvidia-cuda-toolkit \
     && rm -rf /var/lib/apt/lists/*
     
-COPY --from=gpu-builder /app/llama.cpp/server /usr/local/bin/llama-server
-RUN mkdir -p /app/models /app/logs
+COPY --from=gpu-builder /app/llama.cpp/build/bin/llama-server /usr/local/bin/llama-server
+COPY --from=gpu-builder /app/llama.cpp/build/bin/lib*.so* /usr/local/lib/
+RUN mkdir -p /app/models /app/logs && ldconfig
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 EXPOSE 8080
 CMD ["llama-server", "--host", "0.0.0.0", "--port", "8080"]
